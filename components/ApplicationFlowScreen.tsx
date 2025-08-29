@@ -1,9 +1,10 @@
+
 import React, { useState, useRef } from 'react';
 import { JourneyStep, type ScreenProps, type Document as AppDocument } from '../types';
 import Button from './common/Button';
 import { UploadIcon, CheckCircleIcon } from './common/Icons';
 import { useAppContext } from '../App';
-import { extractInfoFromDocument } from '../services/geminiService';
+import { extractInfoFromDocument, extractAadhaarInfoFromDocument, extractGenericInfoFromDocument } from '../services/geminiService';
 
 const ApplicationFlowScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack }) => {
   const { appState, updateDocument, setProfile } = useAppContext();
@@ -58,42 +59,62 @@ const ApplicationFlowScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack }
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && currentlyUploadingId) {
-      const docId = currentlyUploadingId;
-      updateDocument(docId, { status: 'uploading', file, error: undefined, progress: 0 });
+    const docId = currentlyUploadingId;
+    
+    if (file && docId) {
+      // Client-side validation
+      const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+      const maxSize = 5 * 1024 * 1024; // 5MB
+
+      if (!allowedTypes.includes(file.type)) {
+        updateDocument(docId, { status: 'error', error: 'Invalid file type. Please use JPG, PNG, or PDF.' });
+        if(fileInputRef.current) fileInputRef.current.value = "";
+        setCurrentlyUploadingId(null);
+        return;
+      }
+
+      if (file.size > maxSize) {
+        updateDocument(docId, { status: 'error', error: 'File is too large. Maximum size is 5MB.' });
+        if(fileInputRef.current) fileInputRef.current.value = "";
+        setCurrentlyUploadingId(null);
+        return;
+      }
+      
+      updateDocument(docId, { status: 'uploading', file, error: undefined, progress: 0, extractedData: undefined });
       startProgressSimulation(docId);
       
-      if(docId === 'pan') {
-          try {
-              const base64Image = await fileToBase64(file);
-              const extractedData = await extractInfoFromDocument(base64Image, file.type);
-              
-              setProfile({
-                  name: extractedData.name,
-                  pan: extractedData.pan
-              });
-              
-              stopProgressSimulation();
-              updateDocument(docId, { status: 'uploaded', progress: 100 });
+      try {
+        const base64Image = await fileToBase64(file);
+        let extractedData: Record<string, string> = {};
 
-          } catch(error: any) {
-              console.error(error);
-              stopProgressSimulation();
-              const errorMessage = error.message || 'Could not read details. Please re-upload a clearer image.';
-              updateDocument(docId, { status: 'error', error: errorMessage, progress: 0 });
-          }
+        switch (docId) {
+            case 'pan': {
+                const data = await extractInfoFromDocument(base64Image, file.type);
+                setProfile({ name: data.name, pan: data.pan });
+                extractedData = { "Name": data.name, "PAN": data.pan };
+                break;
+            }
+            case 'aadhaar': {
+                const data = await extractAadhaarInfoFromDocument(base64Image, file.type);
+                extractedData = { "Name": data.name, "Aadhaar Number": data.aadhaar };
+                break;
+            }
+            case 'admission':
+            case 'marksheet': {
+                const data = await extractGenericInfoFromDocument(base64Image, file.type);
+                extractedData = { "Document Type": data.documentType, "Institute": data.institute };
+                break;
+            }
+        }
+        
+        stopProgressSimulation();
+        updateDocument(docId, { status: 'uploaded', progress: 100, extractedData });
 
-      } else {
-        // Simulate upload process for other documents
-        setTimeout(() => {
-          stopProgressSimulation();
-          const isSuccess = Math.random() > 0.2; // 80% success rate
-          if (isSuccess) {
-            updateDocument(docId, { status: 'uploaded', progress: 100 });
-          } else {
-            updateDocument(docId, { status: 'error', error: 'Upload failed. Please try again.', progress: 0 });
-          }
-        }, 2500); // Increased time for progress bar to be visible
+      } catch(error: any) {
+        console.error(error);
+        stopProgressSimulation();
+        const errorMessage = error.message || 'Could not read details. Please re-upload a clearer image.';
+        updateDocument(docId, { status: 'error', error: errorMessage, progress: 0 });
       }
     }
     if(fileInputRef.current) {
@@ -101,6 +122,7 @@ const ApplicationFlowScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack }
     }
     setCurrentlyUploadingId(null);
   };
+
 
   const allDocsUploaded = documents.every(doc => doc.status === 'uploaded');
 
@@ -148,14 +170,14 @@ const ApplicationFlowScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack }
             const styles = getStatusStyles(doc.status);
             return (
                 <div key={doc.id} className={`${styles.container} p-4 rounded-lg flex items-center justify-between border transition-colors duration-300 ease-in-out`}>
-                    <div className="flex-grow pr-4">
+                    <div className="flex-grow pr-4 overflow-hidden">
                       <p className="font-medium text-gray-800">{doc.name}</p>
                       
                       {/* Status specific content */}
                       {doc.status === 'uploading' && (
                           <div className="w-full mt-1">
                               <p className={`text-xs font-medium ${styles.textColor}`}>
-                                  {doc.id === 'pan' ? `Analyzing... ${Math.round(doc.progress ?? 0)}%` : `Uploading... ${Math.round(doc.progress ?? 0)}%`}
+                                  {`Analyzing... ${Math.round(doc.progress ?? 0)}%`}
                               </p>
                               <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
                                 <div
@@ -167,14 +189,23 @@ const ApplicationFlowScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack }
                       )}
 
                       {doc.status === 'uploaded' && (
-                          doc.id === 'pan' && appState.profile.pan ? (
-                              <div className="text-xs mt-1.5 space-y-1">
-                                  <p className="text-gray-700"><span className="font-semibold">Name:</span> {appState.profile.name}</p>
-                                  <p className="text-gray-700"><span className="font-semibold">PAN:</span> {appState.profile.pan}</p>
+                          <>
+                              <div className="flex items-center text-xs text-green-700 mt-1.5">
+                                  <CheckCircleIcon className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
+                                  <span className="font-semibold">Verified Details:</span>
                               </div>
-                          ) : (
-                              <p className="text-xs text-gray-500 mt-1 truncate max-w-[150px]">{doc.file?.name}</p>
-                          )
+                              {doc.extractedData && Object.keys(doc.extractedData).length > 0 ? (
+                                  <div className="text-xs mt-1 space-y-0.5 pl-5">
+                                      {Object.entries(doc.extractedData).map(([key, value]) => (
+                                          <p key={key} className="text-gray-700 truncate">
+                                              <span className="font-medium">{key}:</span> {value}
+                                          </p>
+                                      ))}
+                                  </div>
+                              ) : (
+                                  <p className="text-xs text-gray-500 mt-1 truncate max-w-[150px]">{doc.file?.name}</p>
+                              )}
+                          </>
                       )}
                       
                       {doc.status === 'error' && (

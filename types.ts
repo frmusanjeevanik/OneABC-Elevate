@@ -58,6 +58,7 @@ export interface Document {
   file?: File;
   error?: string;
   progress?: number;
+  extractedData?: Record<string, string>;
 }
 
 export interface AppState {

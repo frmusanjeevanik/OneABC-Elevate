@@ -140,8 +140,8 @@ const App: React.FC = () => {
 
   return (
     <AppProvider>
-        <div className="bg-gray-50 font-sans antialiased text-gray-900 min-h-screen flex items-center justify-center">
-            <div className="relative w-full max-w-lg min-h-[800px] bg-white shadow-2xl rounded-lg flex flex-col">
+        <div className="bg-gray-100 font-sans antialiased text-gray-900 min-h-screen flex items-center justify-center p-4">
+            <div className="relative w-full max-w-4xl bg-white shadow-2xl rounded-lg flex flex-col">
                 {showHeader && <Header showBackButton={showBackButton} goBack={goBack} goHome={goHome} />}
                 <main className="p-6 flex-grow flex flex-col">
                     {renderScreen()}

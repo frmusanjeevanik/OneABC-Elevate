@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import type { ScreenProps, ChatMessage } from '../types';
 import Button from './common/Button';
@@ -6,9 +7,14 @@ import { ChatBubbleIcon, SendIcon } from './common/Icons';
 import { getChatbotResponse } from '../services/geminiService';
 import { useAppContext } from '../App';
 
-const Chatbot: React.FC = () => {
+interface ChatbotProps {
+  userName: string;
+  progress: number;
+}
+
+const Chatbot: React.FC<ChatbotProps> = ({ userName, progress }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([
-        { sender: 'ai', text: "Hello! I'm your Elevate Guide. How can I assist you with your education loan today?" }
+        { sender: 'ai', text: `Hello, ${userName}! I'm your Elevate Guide. I see you've completed ${progress.toFixed(0)}% of your loan repayment. How can I help you today?` }
     ]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -42,7 +48,7 @@ const Chatbot: React.FC = () => {
     };
 
     return (
-        <Card className="mt-6">
+        <Card>
             <h3 className="font-bold text-gray-800 flex items-center"><ChatBubbleIcon className="w-6 h-6 mr-2 text-capital-red"/> 24/7 Help Assistant</h3>
             <div className="mt-4 h-64 bg-gray-50 rounded-lg p-3 flex flex-col space-y-3 overflow-y-auto">
                 {messages.map((msg, index) => (
@@ -92,45 +98,51 @@ const DashboardScreen: React.FC<ScreenProps> = ({ setJourneyStep }) => {
 
 
   return (
-    <div className="animate-fade-in-up space-y-6">
+    <div className="animate-fade-in-up">
       <div>
         <h2 className="text-3xl font-bold text-gray-800">Hello, {userName}!</h2>
         <p className="text-gray-600">Here's a summary of your education loan.</p>
       </div>
 
-      <Card className="!bg-capital-red text-white">
-        <p className="text-sm opacity-80">Next EMI due</p>
-        <p className="text-3xl font-bold mt-1">₹{nextEmi}</p>
-        <p className="text-xs opacity-80 mt-1">on 15 July 2025</p>
-      </Card>
-
-      <div>
-        <h3 className="font-bold text-gray-800 mb-2">Repayment Progress</h3>
-        <Card>
-          <div className="flex justify-between text-sm mb-2">
-            <span className="font-medium">Paid: ₹{amountPaid.toLocaleString('en-IN')}</span>
-            <span className="text-gray-500">Total: ₹{totalAmount.toLocaleString('en-IN')}</span>
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Content Column */}
+        <div className="lg:col-span-2 space-y-6">
+          <div>
+            <h3 className="font-bold text-gray-800 mb-2">Repayment Progress</h3>
+            <Card>
+              <div className="flex justify-between text-sm mb-2">
+                <span className="font-medium">Paid: ₹{amountPaid.toLocaleString('en-IN')}</span>
+                <span className="text-gray-500">Total: ₹{totalAmount.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-4">
+                <div className="bg-progressive-green h-4 rounded-full" style={{width: `${progress}%`}}></div>
+              </div>
+              <p className="text-xs text-right mt-1 text-gray-500">{progress.toFixed(2)}% completed</p>
+            </Card>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-4">
-            <div className="bg-progressive-green h-4 rounded-full" style={{width: `${progress}%`}}></div>
-          </div>
-          <p className="text-xs text-right mt-1 text-gray-500">{progress.toFixed(2)}% completed</p>
-        </Card>
-      </div>
-      
-      <Chatbot />
-
-      <div>
-        <h3 className="font-bold text-gray-800 mb-2">Student Success Stories</h3>
-        <Card>
-            <div className="flex items-center space-x-4">
-                <img src="https://picsum.photos/seed/student/80/80" alt="Student" className="w-20 h-20 rounded-full object-cover"/>
-                <div>
-                    <p className="italic text-gray-600">"OneABC Elevate made my dream of studying abroad a reality. The process was so simple and stress-free."</p>
-                    <p className="font-semibold text-right mt-2 text-gray-800">- Priya Sharma, MIT</p>
-                </div>
+          <Chatbot userName={userName} progress={progress} />
+        </div>
+        
+        {/* Sidebar Column */}
+        <div className="lg:col-span-1 space-y-6">
+            <Card className="!bg-capital-red text-white">
+                <p className="text-sm opacity-80">Next EMI due</p>
+                <p className="text-3xl font-bold mt-1">₹{nextEmi}</p>
+                <p className="text-xs opacity-80 mt-1">on 15 July 2025</p>
+            </Card>
+            <div>
+                <h3 className="font-bold text-gray-800 mb-2">Student Success Stories</h3>
+                <Card>
+                    <div className="flex items-center space-x-4">
+                        <img src="https://picsum.photos/seed/student/80/80" alt="Student" className="w-20 h-20 rounded-full object-cover"/>
+                        <div>
+                            <p className="italic text-gray-600">"OneABC Elevate made my dream of studying abroad a reality. The process was so simple and stress-free."</p>
+                            <p className="font-semibold text-right mt-2 text-gray-800">- Priya Sharma, MIT</p>
+                        </div>
+                    </div>
+                </Card>
             </div>
-        </Card>
+        </div>
       </div>
     </div>
   );

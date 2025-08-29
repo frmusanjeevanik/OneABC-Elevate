@@ -5,11 +5,23 @@ import Button from './common/Button';
 import { CheckCircleIcon } from './common/Icons';
 import { useAppContext } from '../App';
 
-// Define validation constants
-const FEE_MIN = 50000;
-const FEE_MAX = 10000000;
-const INCOME_MIN = 300000;
-const INCOME_MAX = 5000000;
+// Define options for the dropdowns
+const courseFeeOptions = [
+  { label: "Up to ₹5 Lakhs", value: "500000" },
+  { label: "₹5 Lakhs - ₹10 Lakhs", value: "1000000" },
+  { label: "₹10 Lakhs - ₹20 Lakhs", value: "2000000" },
+  { label: "₹20 Lakhs - ₹40 Lakhs", value: "4000000" },
+  { label: "₹40 Lakhs - ₹75 Lakhs", value: "7500000" },
+  { label: "Above ₹75 Lakhs", value: "10000000" },
+];
+
+const parentIncomeOptions = [
+  { label: "₹3 Lakhs - ₹5 Lakhs", value: "500000" },
+  { label: "₹5 Lakhs - ₹10 Lakhs", value: "1000000" },
+  { label: "₹10 Lakhs - ₹20 Lakhs", value: "2000000" },
+  { label: "₹20 Lakhs - ₹50 Lakhs", value: "5000000" },
+  { label: "Above ₹50 Lakhs", value: "5000001" },
+];
 
 
 const EligibilityCheckScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack }) => {
@@ -21,21 +33,10 @@ const EligibilityCheckScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack 
   const [errors, setErrors] = useState<{ courseFee?: string, parentIncome?: string }>({});
 
   const validateField = (field: 'courseFee' | 'parentIncome', value: string) => {
-    const numValue = Number(value);
     let errorMessage: string | undefined = undefined;
 
     if (!value) {
-      errorMessage = "This field is required.";
-    } else if (isNaN(numValue)) {
-      errorMessage = "Please enter a valid number.";
-    } else {
-      if (field === 'courseFee') {
-        if (numValue < FEE_MIN) errorMessage = `Fee must be at least ₹${FEE_MIN.toLocaleString('en-IN')}.`;
-        else if (numValue > FEE_MAX) errorMessage = `Fee cannot exceed ₹${FEE_MAX.toLocaleString('en-IN')}.`;
-      } else if (field === 'parentIncome') {
-        if (numValue < INCOME_MIN) errorMessage = `Income must be at least ₹${INCOME_MIN.toLocaleString('en-IN')}.`;
-        else if (numValue > INCOME_MAX) errorMessage = `Income cannot exceed ₹${INCOME_MAX.toLocaleString('en-IN')}.`;
-      }
+      errorMessage = "Please select an option.";
     }
     
     setErrors(prev => ({ ...prev, [field]: errorMessage }));
@@ -56,7 +57,11 @@ const EligibilityCheckScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack 
   };
 
   const handleCheck = () => {
-    if (Object.values(errors).some(e => e)) return;
+    if (Object.values(errors).some(e => e) || !details.courseFee || !details.parentIncome) {
+        if(!details.courseFee) validateField('courseFee', '');
+        if(!details.parentIncome) validateField('parentIncome', '');
+        return;
+    }
 
     setIsLoading(true);
     setEligibilityDetails(details);
@@ -67,9 +72,13 @@ const EligibilityCheckScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack 
       const fee = Number(details.courseFee) || 0;
       const tier = details.instituteTier || 'Tier 1';
 
-      let multiplier = 2.5; // Base for Tier 3
-      if (tier.includes('Tier 1')) multiplier = 5;
-      if (tier.includes('Tier 2')) multiplier = 3.5;
+      let multiplier = 2.0; // Base for Tier 3
+      if (tier.includes('Tier 1')) multiplier = 4.5;
+      if (tier.includes('Tier 2')) multiplier = 3.0;
+      
+      // Add a slight random factor to make the calculation feel more dynamic
+      const randomFactor = (Math.random() - 0.5) * 0.1; // +/- 5%
+      multiplier *= (1 + randomFactor);
 
       const incomeBasedAmount = income * multiplier;
       const feeBasedAmount = fee * 0.9; // Can cover up to 90% of fee
@@ -134,7 +143,12 @@ const EligibilityCheckScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack 
       <div className="space-y-4">
         <div>
           <label htmlFor="courseFee" className="block text-sm font-medium text-gray-700">Total Course Fee</label>
-          <input type="number" id="courseFee" value={details.courseFee || ''} onChange={handleChange} placeholder="e.g., 2500000" className={`mt-1 block w-full px-3 py-2 bg-white border ${errors.courseFee ? 'border-red-500' : 'border-gray-300'} rounded-md shadow-sm focus:outline-none focus:ring-capital-red focus:border-capital-red sm:text-sm`} />
+          <select id="courseFee" value={details.courseFee || ''} onChange={handleChange} className={`mt-1 block w-full px-3 py-2 bg-white border ${errors.courseFee ? 'border-red-500' : 'border-gray-300'} rounded-md shadow-sm focus:outline-none focus:ring-capital-red focus:border-capital-red sm:text-sm`}>
+            <option value="" disabled>Select a range</option>
+            {courseFeeOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
           {errors.courseFee && <p className="text-xs text-red-600 mt-1">{errors.courseFee}</p>}
         </div>
         <div>
@@ -147,7 +161,12 @@ const EligibilityCheckScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack 
         </div>
         <div>
           <label htmlFor="parentIncome" className="block text-sm font-medium text-gray-700">Parent's Annual Income</label>
-          <input type="number" id="parentIncome" value={details.parentIncome || ''} onChange={handleChange} placeholder="e.g., 1200000" className={`mt-1 block w-full px-3 py-2 bg-white border ${errors.parentIncome ? 'border-red-500' : 'border-gray-300'} rounded-md shadow-sm focus:outline-none focus:ring-capital-red focus:border-capital-red sm:text-sm`} />
+           <select id="parentIncome" value={details.parentIncome || ''} onChange={handleChange} className={`mt-1 block w-full px-3 py-2 bg-white border ${errors.parentIncome ? 'border-red-500' : 'border-gray-300'} rounded-md shadow-sm focus:outline-none focus:ring-capital-red focus:border-capital-red sm:text-sm`}>
+             <option value="" disabled>Select a range</option>
+            {parentIncomeOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
           {errors.parentIncome && <p className="text-xs text-red-600 mt-1">{errors.parentIncome}</p>}
         </div>
       </div>

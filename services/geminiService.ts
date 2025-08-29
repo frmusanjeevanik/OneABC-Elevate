@@ -58,7 +58,7 @@ export const extractInfoFromDocument = async (base64Image: string, mimeType: str
             },
         };
         const textPart = {
-            text: "From the provided image of an Indian PAN card, extract the person's full name and their PAN number. Ensure the PAN number is extracted with 100% accuracy."
+            text: "First, verify if the provided image is a valid Indian PAN card. Then, extract the person's full name and their PAN number. If it is not a PAN card, set isPanCard to false and leave other fields null."
         };
 
         const response = await ai.models.generateContent({
@@ -69,10 +69,11 @@ export const extractInfoFromDocument = async (base64Image: string, mimeType: str
                 responseSchema: {
                     type: Type.OBJECT,
                     properties: {
-                        name: { type: Type.STRING },
-                        pan: { type: Type.STRING }
+                        isPanCard: { type: Type.BOOLEAN },
+                        name: { type: Type.STRING, description: "The full name, only if isPanCard is true." },
+                        pan: { type: Type.STRING, description: "The PAN number, only if isPanCard is true." }
                     },
-                    required: ["name", "pan"]
+                    required: ["isPanCard"]
                 },
             },
         });
@@ -80,14 +81,99 @@ export const extractInfoFromDocument = async (base64Image: string, mimeType: str
         const jsonStr = response.text.trim();
         const data = JSON.parse(jsonStr);
 
+        if (!data.isPanCard) {
+            throw new Error("The uploaded document does not appear to be a valid PAN card.");
+        }
+
         if (!data.name || !data.pan) {
             throw new Error("Could not extract all required fields from the document.");
         }
         
-        return data;
+        return { name: data.name, pan: data.pan };
 
     } catch (error) {
         console.error("Error in Gemini document extraction:", error);
+        if (error instanceof Error) {
+            throw error; // Re-throw the specific error
+        }
+        throw new Error("Failed to analyze the document. Please try a clearer image.");
+    }
+};
+
+export const extractAadhaarInfoFromDocument = async (base64Image: string, mimeType: string): Promise<{ name: string; aadhaar: string; }> => {
+    if (!API_KEY) { throw new Error("API Key not configured for Gemini service."); }
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: { parts: [
+                { inlineData: { data: base64Image, mimeType: mimeType } },
+                { text: "First, verify if the provided image is a valid Indian Aadhaar card. If it is, extract the person's full name and their Aadhaar number. IMPORTANT: For privacy, you MUST return the Aadhaar number with the first 8 digits masked with 'X'. The format should be 'XXXX-XXXX-NNNN'. If it is not an Aadhaar card, set isAadhaarCard to false." }
+            ]},
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        isAadhaarCard: { type: Type.BOOLEAN },
+                        name: { type: Type.STRING, description: "The full name, only if isAadhaarCard is true." },
+                        aadhaar: { type: Type.STRING, description: "The masked Aadhaar number, e.g., XXXX-XXXX-1234, only if isAadhaarCard is true." }
+                    },
+                    required: ["isAadhaarCard"]
+                },
+            },
+        });
+        const data = JSON.parse(response.text.trim());
+        
+        if (!data.isAadhaarCard) {
+            throw new Error("The uploaded document does not appear to be a valid Aadhaar card.");
+        }
+
+        if (!data.name || !data.aadhaar) { throw new Error("Could not extract all required fields from Aadhaar card."); }
+        return { name: data.name, aadhaar: data.aadhaar };
+    } catch (error) {
+        console.error("Error in Gemini Aadhaar extraction:", error);
+         if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error("Failed to analyze the Aadhaar card. Please try a clearer image.");
+    }
+};
+
+export const extractGenericInfoFromDocument = async (base64Image: string, mimeType: string): Promise<{ documentType: string; institute: string; }> => {
+    if (!API_KEY) { throw new Error("API Key not configured for Gemini service."); }
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: { parts: [
+                { inlineData: { data: base64Image, mimeType: mimeType } },
+                { text: "First, verify if the provided image is a valid educational document (like an admission letter or a marksheet). If it is, identify the type of document and extract the name of the institution or university. If it is not a valid educational document, set isEducationalDocument to false." }
+            ]},
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        isEducationalDocument: { type: Type.BOOLEAN },
+                        documentType: { type: Type.STRING, description: "e.g., 'Admission Letter', 'Marksheet', only if isEducationalDocument is true." },
+                        institute: { type: Type.STRING, description: "The name of the university or institute, only if isEducationalDocument is true." }
+                    },
+                    required: ["isEducationalDocument"]
+                },
+            },
+        });
+        const data = JSON.parse(response.text.trim());
+
+        if (!data.isEducationalDocument) {
+            throw new Error("This does not appear to be a valid admission letter or marksheet.");
+        }
+
+        if (!data.documentType || !data.institute) { throw new Error("Could not extract required fields from the document."); }
+        return { documentType: data.documentType, institute: data.institute };
+    } catch (error) {
+        console.error("Error in Gemini generic document extraction:", error);
+        if (error instanceof Error) {
+            throw error;
+        }
         throw new Error("Failed to analyze the document. Please try a clearer image.");
     }
 };

@@ -7,14 +7,15 @@ import { SparklesIcon } from './common/Icons';
 import { useAppContext } from '../App';
 
 const OfferCard = ({ offer, onSelect }: { offer: LoanOffer, onSelect: () => void }) => (
-  <Card className="mb-4 !p-0 overflow-hidden border-2 border-transparent hover:border-capital-red">
+  <Card className="!p-0 overflow-hidden border-2 border-transparent hover:border-capital-red h-full flex flex-col">
     {offer.isPopular && (
       <div className="bg-warm-yellow text-yellow-900 px-4 py-1 text-sm font-bold flex items-center">
         <SparklesIcon className="w-4 h-4 mr-2" />
         Popular Choice
       </div>
     )}
-    <div className="p-6">
+    <div className="p-6 flex flex-col flex-grow">
+      <div className="flex-grow">
         <div className="flex justify-between items-start">
             <div>
                 <h3 className="text-xl font-bold text-gray-800">{offer.name}</h3>
@@ -43,10 +44,12 @@ const OfferCard = ({ offer, onSelect }: { offer: LoanOffer, onSelect: () => void
                 <p className="font-semibold text-gray-800">{offer.interestRate}% p.a.</p>
             </div>
         </div>
-        <div className="mt-4 bg-green-50 text-progressive-green p-2 rounded-md text-xs font-medium">
-           {offer.specialOffer}
+        <div className="mt-4 bg-green-50 text-progressive-green p-3 rounded-md text-sm font-medium flex items-start">
+           <SparklesIcon className="w-4 h-4 mr-2 flex-shrink-0 mt-0.5" />
+           <span>{offer.specialOffer}</span>
         </div>
-         <Button fullWidth className="mt-6" onClick={onSelect}>Choose This Offer</Button>
+      </div>
+       <Button fullWidth className="mt-6" onClick={onSelect}>Choose This Offer</Button>
     </div>
   </Card>
 );
@@ -83,12 +86,12 @@ const OfferDiscoveryScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack })
         <button onClick={() => setFilter('collateral')} className={`px-4 py-2 rounded-full text-sm font-semibold ${filter === 'collateral' ? 'bg-capital-red text-white' : 'bg-gray-200 text-gray-700'}`}>With Collateral</button>
       </div>
 
-      <div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {filteredOffers.map(offer => (
           <OfferCard key={offer.id} offer={offer} onSelect={() => handleSelectOffer(offer)} />
         ))}
       </div>
-      {goBack && <div className="mt-4"><Button fullWidth variant="secondary" onClick={goBack}>Back</Button></div>}
+      {goBack && <div className="mt-6"><Button fullWidth variant="secondary" onClick={goBack}>Back</Button></div>}
     </div>
   );
 };
