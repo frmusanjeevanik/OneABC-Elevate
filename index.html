@@ -28,6 +28,24 @@
       @supports (font-variation-settings: normal) {
         html { font-family: 'Inter var', sans-serif; }
       }
+      
+      /* Animations for new onboarding screen */
+      @keyframes float {
+        0% { transform: translateY(0px); }
+        50% { transform: translateY(-10px); }
+        100% { transform: translateY(0px); }
+      }
+      .animate-float-slow {
+        animation: float 6s ease-in-out infinite;
+      }
+      .animate-float-fast {
+        animation: float 4s ease-in-out infinite;
+      }
+
+      /* Animation for donut chart */
+      .donut-segment {
+        transition: stroke-dashoffset 0.5s ease-out;
+      }
     </style>
   <script type="importmap">
 {

@@ -3,8 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { JourneyStep, type ScreenProps } from '../types';
 import Button from './common/Button';
 import { CheckCircleIcon, DownloadIcon } from './common/Icons';
+import { useAppContext } from '../App';
 
 const SanctionApprovalScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack }) => {
+  const { appState } = useAppContext();
   const [isApproved, setIsApproved] = useState(false);
 
   useEffect(() => {
@@ -13,6 +15,49 @@ const SanctionApprovalScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack 
     }, 3000);
     return () => clearTimeout(timer);
   }, []);
+
+  const handleDownloadLetter = () => {
+    const { profile, selectedOffer } = appState;
+    const today = new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    const letterContent = `
+OneABC Elevate - Education Loan Sanction Letter
+===============================================
+
+Date: ${today}
+
+Dear ${profile.name || 'Student'},
+
+We are delighted to inform you that your education loan application with OneABC Elevate has been approved. Please find the sanction details below.
+
+Loan Details:
+----------------
+- Applicant Name: ${profile.name || 'N/A'}
+- Sanctioned Amount: ₹${selectedOffer?.amount?.toLocaleString('en-IN') || 'N/A'}
+- Loan Plan: ${selectedOffer?.name || 'N/A'}
+- Interest Rate: ${selectedOffer?.interestRate || 'N/A'}% p.a.
+- Maximum Tenure: ${selectedOffer?.tenure || 'N/A'} years
+- Collateral Required: ${selectedOffer?.collateral ? 'Yes' : 'No'}
+
+This letter is a provisional confirmation of your loan sanction. The final disbursal is subject to the completion of all legal documentation and verification processes.
+
+We wish you the very best in your academic pursuits.
+
+Sincerely,
+The OneABC Elevate Team
+Aditya Birla Capital
+`;
+
+    const blob = new Blob([letterContent.trim()], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'OneABC_Elevate_Sanction_Letter.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="animate-fade-in-up text-center flex flex-col items-center">
@@ -41,7 +86,7 @@ const SanctionApprovalScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack 
           </div>
 
           <div className="w-full mt-8 space-y-4">
-            <Button fullWidth onClick={() => alert("Downloading Sanction Letter...")} className="flex items-center justify-center space-x-2">
+            <Button fullWidth onClick={handleDownloadLetter} className="flex items-center justify-center space-x-2">
                 <DownloadIcon className="w-5 h-5"/>
                 <span>Download Sanction Letter</span>
             </Button>

@@ -55,6 +55,11 @@ const RepaymentPlanningScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack
     ];
   }, [loanAmount, rate, tenure]);
 
+  const maxInterest = useMemo(() => {
+    if (paymentPlans.length === 0) return 1;
+    return Math.max(...paymentPlans.map(p => p.totalInterest));
+  }, [paymentPlans]);
+
   useEffect(() => {
     const selectedPlan = paymentPlans.find(p => p.id === selectedPlanId);
     if (selectedPlan) {
@@ -62,6 +67,7 @@ const RepaymentPlanningScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack
     } else if (paymentPlans.length > 0) {
       // Fallback to balanced if selected plan disappears
       setDisplayEmi(paymentPlans[0].emi);
+      setSelectedPlanId('balanced');
     }
   }, [selectedPlanId, paymentPlans]);
 
@@ -70,7 +76,7 @@ const RepaymentPlanningScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack
       <h2 className="text-2xl font-bold text-gray-800">Plan Your Repayment</h2>
       <p className="text-gray-600 mt-2 mb-6">You're in control. Let's find a plan that works for you.</p>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         {/* Left: EMI Calculator & Options */}
         <div className="space-y-6">
             <Card>
@@ -121,16 +127,40 @@ const RepaymentPlanningScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack
 
         </div>
         
-        {/* Right: Info Boxes */}
+        {/* Right: Info Boxes & Chart */}
         <div className="space-y-6">
-          <div className="bg-green-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-progressive-green">Moratorium Period</h4>
-            <p className="text-sm text-green-800">Your EMIs begin after your course ends + 1 year. No payments needed while you study!</p>
-          </div>
-          <div className="bg-yellow-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-yellow-900">Prepayment Flexibility</h4>
-            <p className="text-sm text-yellow-800">Pay off your loan faster with zero prepayment penalties. Save on interest!</p>
-          </div>
+            <Card>
+                <h3 className="font-bold text-gray-800 mb-4">Total Interest Comparison</h3>
+                <div className="flex items-end justify-around h-48 space-x-4 pt-4" aria-label="Bar chart comparing total interest for each plan">
+                {paymentPlans.map(plan => (
+                    <div key={plan.id} className="flex flex-col items-center flex-1">
+                    <div className="text-xs font-semibold text-gray-600 mb-1">₹{plan.totalInterest.toLocaleString('en-IN')}</div>
+                    <div 
+                        role="progressbar"
+                        aria-valuenow={plan.totalInterest}
+                        aria-valuemin={0}
+                        aria-valuemax={maxInterest}
+                        aria-label={`${plan.name} total interest`}
+                        className={`w-full rounded-t-md transition-all duration-500 ease-out ${
+                        plan.id === 'saver' ? 'bg-progressive-green' : plan.id === 'flexible' ? 'bg-warm-yellow' : 'bg-capital-red/80'
+                        }`}
+                        style={{ height: `${(plan.totalInterest / maxInterest) * 100}%`}}
+                    ></div>
+                    <div className="text-sm font-medium text-gray-700 mt-2 text-center">{plan.name}</div>
+                    </div>
+                ))}
+                </div>
+                <p className="text-xs text-gray-500 text-center mt-4">The 'Saver Plan' helps you pay the least amount of interest over the life of the loan.</p>
+            </Card>
+
+            <div className="bg-green-50 p-4 rounded-lg">
+                <h4 className="font-semibold text-progressive-green">Moratorium Period</h4>
+                <p className="text-sm text-green-800">Your EMIs begin after your course ends + 1 year. No payments needed while you study!</p>
+            </div>
+            <div className="bg-yellow-50 p-4 rounded-lg">
+                <h4 className="font-semibold text-yellow-900">Prepayment Flexibility</h4>
+                <p className="text-sm text-yellow-800">Pay off your loan faster with zero prepayment penalties. Save on interest!</p>
+            </div>
         </div>
       </div>
       

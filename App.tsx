@@ -1,5 +1,5 @@
 import React, { useState, createContext, useContext, ReactNode, useRef } from 'react';
-import { JourneyStep, type AppState, type AppContextType, type Document, type LoanOffer, type UserProfile, type EligibilityDetails } from './types';
+import { JourneyStep, type AppState, type AppContextType, type Document, type LoanOffer, type UserProfile, type EligibilityDetails, ChatMessage } from './types';
 import OnboardingScreen from './components/OnboardingScreen';
 import ProfileSetupScreen from './components/ProfileSetupScreen';
 import EligibilityCheckScreen from './components/EligibilityCheckScreen';
@@ -37,6 +37,7 @@ const initialState: AppState = {
   eligibleAmount: null,
   selectedOffer: null,
   documents: initialDocuments,
+  chatHistory: [],
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -49,7 +50,6 @@ export const useAppContext = () => {
   return context;
 };
 
-// Fix: The original file was incomplete. This complete version fixes the errors by finishing the AppProvider component and adding the main App component with a default export.
 const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [appState, setAppState] = useState<AppState>(initialState);
 
@@ -70,18 +70,36 @@ const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   };
   
   const updateDocument = (id: string, updates: Partial<Document>) => {
-    setAppState(prev => ({
-        ...prev,
-        documents: prev.documents.map(doc => doc.id === id ? {...doc, ...updates} : doc)
-    }))
+    setAppState(prev => {
+        const docToUpdate = prev.documents.find(doc => doc.id === id);
+        // Revoke old object URL if it exists and a new one is being provided or a new file is uploaded
+        if (docToUpdate?.previewUrl && ('previewUrl' in updates || 'file' in updates)) {
+            URL.revokeObjectURL(docToUpdate.previewUrl);
+        }
+
+        return {
+            ...prev,
+            documents: prev.documents.map(doc => doc.id === id ? {...doc, ...updates} : doc)
+        };
+    })
+  };
+
+  const setChatHistory = (history: ChatMessage[]) => {
+    setAppState(prev => ({ ...prev, chatHistory: history }));
   };
 
   const reset = () => {
+      // Also revoke all URLs on a full application reset to prevent memory leaks
+      appState.documents.forEach(doc => {
+          if (doc.previewUrl) {
+              URL.revokeObjectURL(doc.previewUrl);
+          }
+      });
       setAppState(initialState);
   };
 
   return (
-    <AppContext.Provider value={{ appState, setProfile, setEligibilityDetails, setEligibleAmount, setSelectedOffer, updateDocument, reset }}>
+    <AppContext.Provider value={{ appState, setProfile, setEligibilityDetails, setEligibleAmount, setSelectedOffer, updateDocument, setChatHistory, reset }}>
       {children}
     </AppContext.Provider>
   );

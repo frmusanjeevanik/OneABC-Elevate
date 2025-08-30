@@ -1,250 +1,229 @@
-
-import React, { useState, useRef } from 'react';
-import { JourneyStep, type ScreenProps, type Document as AppDocument } from '../types';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { JourneyStep, type UserProfile } from '../types';
 import Button from './common/Button';
-import { UploadIcon, CheckCircleIcon } from './common/Icons';
+import { UploadIcon, AiIcon, FileCheckIcon, FileXIcon, CheckCircleIcon } from './common/Icons';
 import { useAppContext } from '../App';
-import { extractInfoFromDocument, extractAadhaarInfoFromDocument, extractGenericInfoFromDocument } from '../services/geminiService';
+import { identifyDocumentType, extractInfoFromDocument, extractAadhaarInfoFromDocument, extractGenericInfoFromDocument } from '../services/geminiService';
+
+type ProcessStatus = 'queue' | 'identifying' | 'extracting' | 'success' | 'error';
+interface ProcessFile {
+  id: string;
+  file: File;
+  status: ProcessStatus;
+  type?: string;
+  extractedData?: any;
+  error?: string;
+}
+
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = error => reject(error);
+  });
+};
+
+const getStatusIndicator = (file: ProcessFile) => {
+    const statusMap: Record<ProcessStatus, React.ReactNode> = {
+        queue: <div className="text-xs text-gray-500">Queued</div>,
+        identifying: <div className="flex items-center text-xs text-blue-600"><AiIcon className="w-4 h-4 mr-1 animate-spin-slow" /> Identifying...</div>,
+        extracting: <div className="flex items-center text-xs text-blue-600"><AiIcon className="w-4 h-4 mr-1 animate-pulse" /> Extracting...</div>,
+        success: <div className="flex items-center text-xs text-progressive-green"><FileCheckIcon className="w-4 h-4 mr-1" /> Success</div>,
+        error: <div className="flex items-center text-xs text-capital-red"><FileXIcon className="w-4 h-4 mr-1" /> Error</div>,
+    };
+    return statusMap[file.status];
+}
 
 const ApplicationFlowScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack }) => {
-  const { appState, updateDocument, setProfile } = useAppContext();
-  const { documents } = appState;
+  const { setProfile } = useAppContext();
+  const [files, setFiles] = useState<ProcessFile[]>([]);
+  const [aggregatedProfile, setAggregatedProfile] = useState<Partial<UserProfile>>({});
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [currentlyUploadingId, setCurrentlyUploadingId] = useState<string | null>(null);
-  const progressIntervalRef = useRef<number | null>(null);
-  
-  const fileToBase64 = (file: File): Promise<string> => {
-      return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(file);
-          reader.onload = () => {
-              const result = reader.result as string;
-              // remove the data url prefix
-              const base64 = result.split(',')[1];
-              resolve(base64);
-          };
-          reader.onerror = error => reject(error);
-      });
-  };
 
-  const startProgressSimulation = (docId: string) => {
-    if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
+  const updateFileStatus = useCallback((id: string, updates: Partial<ProcessFile>) => {
+    setFiles(prev => prev.map(f => (f.id === id ? { ...f, ...updates } : f)));
+  }, []);
+
+  useEffect(() => {
+    // This effect handles the sequential processing of files.
+    // It uses the isProcessing state as a lock to ensure only one file is processed at a time.
+    
+    // Don't start a new process if one is already running
+    if (isProcessing) return;
+
+    const fileToProcess = files.find(f => f.status === 'queue');
+
+    // If no more files are in the queue, we check if all processing is finished.
+    if (!fileToProcess) {
+        const isFinished = files.length > 0 && files.every(f => f.status === 'success' || f.status === 'error');
+        if (isFinished) {
+            // All files are processed, update the main context profile
+            setProfile(aggregatedProfile);
+        }
+        return;
     }
 
-    progressIntervalRef.current = window.setInterval(() => {
-        const doc = appState.documents.find(d => d.id === docId);
-        if (doc && doc.progress !== undefined && doc.progress < 95) {
-            const increment = Math.random() * 10;
-            const newProgress = Math.min(doc.progress + increment, 95);
-            updateDocument(docId, { progress: newProgress });
-        } else {
-            if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-        }
-    }, 200);
-  };
+    const processFile = async () => {
+        setIsProcessing(true); // Lock to prevent other files from being processed
+        const { id, file } = fileToProcess;
 
-  const stopProgressSimulation = () => {
-      if(progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current);
-          progressIntervalRef.current = null;
-      }
+        try {
+            const base64 = await fileToBase64(file);
+
+            updateFileStatus(id, { status: 'identifying' });
+            const docType = await identifyDocumentType(base64, file.type);
+            updateFileStatus(id, { type: docType });
+
+            updateFileStatus(id, { status: 'extracting' });
+            
+            let extractedData: any = {};
+            let partialProfile: Partial<UserProfile> = {};
+
+            switch (docType) {
+                case 'PAN': {
+                    const panData = await extractInfoFromDocument(base64, file.type);
+                    partialProfile = { name: panData.name, pan: panData.pan };
+                    extractedData = { Name: panData.name, PAN: panData.pan };
+                    break;
+                }
+                case 'AADHAAR': {
+                    const aadhaarData = await extractAadhaarInfoFromDocument(base64, file.type);
+                    partialProfile = { name: aadhaarData.name };
+                    extractedData = { Name: aadhaarData.name, Aadhaar: aadhaarData.aadhaar };
+                    break;
+                }
+                case 'ADMISSION':
+                case 'MARKSHEET': {
+                    const eduData = await extractGenericInfoFromDocument(base64, file.type);
+                    partialProfile = { institute: eduData.institute };
+                    extractedData = { Institute: eduData.institute, Type: eduData.documentType };
+                    break;
+                }
+                default:
+                    throw new Error('Document type not recognized for extraction.');
+            }
+            
+            // Aggregate profile data with PAN priority
+            setAggregatedProfile(prev => {
+                const newProfile = { ...prev };
+                // PAN data always overwrites existing data
+                if (docType === 'PAN') {
+                    if (partialProfile.name) newProfile.name = partialProfile.name;
+                    if (partialProfile.pan) newProfile.pan = partialProfile.pan;
+                } else { // Other documents only fill fields if they are currently empty
+                    if (partialProfile.name && !newProfile.name) newProfile.name = partialProfile.name;
+                    if (partialProfile.institute && !newProfile.institute) newProfile.institute = partialProfile.institute;
+                }
+                return newProfile;
+            });
+            
+            updateFileStatus(id, { status: 'success', extractedData });
+
+        } catch (error: any) {
+            updateFileStatus(id, { status: 'error', error: error.message || 'Analysis failed.' });
+        } finally {
+            setIsProcessing(false); // Release the lock for the next file
+        }
+    };
+
+    processFile();
+
+  }, [files, isProcessing, aggregatedProfile, setProfile, updateFileStatus]);
+
+  const handleFileChange = (selectedFiles: FileList | null) => {
+    if (!selectedFiles) return;
+    const newFiles: ProcessFile[] = Array.from(selectedFiles).map(file => ({
+      id: `${file.name}-${file.lastModified}`,
+      file,
+      status: 'queue',
+    }));
+    // Add new files, preventing duplicates
+    setFiles(prev => [...prev.filter(pf => !newFiles.some(nf => nf.id === pf.id)), ...newFiles]);
+  };
+  
+  const onDrag = (e: React.DragEvent<HTMLDivElement>, over: boolean) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(over);
   }
 
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    onDrag(e, false);
+    handleFileChange(e.dataTransfer.files);
+  }
 
-  const handleFileSelect = (id: string) => {
-    setCurrentlyUploadingId(id);
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    const docId = currentlyUploadingId;
-    
-    if (file && docId) {
-      // Client-side validation
-      const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
-      const maxSize = 5 * 1024 * 1024; // 5MB
-
-      if (!allowedTypes.includes(file.type)) {
-        updateDocument(docId, { status: 'error', error: 'Invalid file type. Please use JPG, PNG, or PDF.' });
-        if(fileInputRef.current) fileInputRef.current.value = "";
-        setCurrentlyUploadingId(null);
-        return;
-      }
-
-      if (file.size > maxSize) {
-        updateDocument(docId, { status: 'error', error: 'File is too large. Maximum size is 5MB.' });
-        if(fileInputRef.current) fileInputRef.current.value = "";
-        setCurrentlyUploadingId(null);
-        return;
-      }
-      
-      updateDocument(docId, { status: 'uploading', file, error: undefined, progress: 0, extractedData: undefined });
-      startProgressSimulation(docId);
-      
-      try {
-        const base64Image = await fileToBase64(file);
-        let extractedData: Record<string, string> = {};
-
-        switch (docId) {
-            case 'pan': {
-                const data = await extractInfoFromDocument(base64Image, file.type);
-                setProfile({ name: data.name, pan: data.pan });
-                extractedData = { "Name": data.name, "PAN": data.pan };
-                break;
-            }
-            case 'aadhaar': {
-                const data = await extractAadhaarInfoFromDocument(base64Image, file.type);
-                extractedData = { "Name": data.name, "Aadhaar Number": data.aadhaar };
-                break;
-            }
-            case 'admission':
-            case 'marksheet': {
-                const data = await extractGenericInfoFromDocument(base64Image, file.type);
-                extractedData = { "Document Type": data.documentType, "Institute": data.institute };
-                break;
-            }
-        }
-        
-        stopProgressSimulation();
-        updateDocument(docId, { status: 'uploaded', progress: 100, extractedData });
-
-      } catch(error: any) {
-        console.error(error);
-        stopProgressSimulation();
-        const errorMessage = error.message || 'Could not read details. Please re-upload a clearer image.';
-        updateDocument(docId, { status: 'error', error: errorMessage, progress: 0 });
-      }
-    }
-    if(fileInputRef.current) {
-        fileInputRef.current.value = "";
-    }
-    setCurrentlyUploadingId(null);
-  };
-
-
-  const allDocsUploaded = documents.every(doc => doc.status === 'uploaded');
-
-  // Define status-specific styles for better visual feedback
-  const getStatusStyles = (status: AppDocument['status']) => {
-    switch (status) {
-      case 'uploading':
-        return {
-          container: 'bg-blue-50 border-blue-200',
-          textColor: 'text-blue-700',
-          progressBg: 'bg-blue-500',
-        };
-      case 'uploaded':
-        return {
-          container: 'bg-green-50 border-green-200',
-          textColor: 'text-green-800',
-          iconColor: 'text-progressive-green',
-        };
-      case 'error':
-        return {
-          container: 'bg-red-50 border-red-200',
-          textColor: 'text-capital-red',
-          actionColor: 'text-capital-red',
-        };
-      case 'pending':
-      default:
-        return {
-          container: 'bg-gray-50 border-gray-200',
-          textColor: 'text-gray-500',
-          actionColor: 'text-gray-700',
-        };
-    }
-  };
-
+  const allDone = files.length > 0 && files.every(f => f.status === 'success' || f.status === 'error');
 
   return (
     <div className="animate-fade-in-up">
-      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/png, image/jpeg, application/pdf" />
-      <h2 className="text-2xl font-bold text-gray-800">Complete Your Application</h2>
-      <p className="text-gray-600 mt-2 mb-6">Just a few more steps. We'll guide you through it.</p>
-
-      <div className="space-y-4">
-        <h3 className="font-semibold text-gray-700">Upload Documents</h3>
-        {documents.map((doc: AppDocument) => {
-            const styles = getStatusStyles(doc.status);
-            return (
-                <div key={doc.id} className={`${styles.container} p-4 rounded-lg flex items-center justify-between border transition-colors duration-300 ease-in-out`}>
-                    <div className="flex-grow pr-4 overflow-hidden">
-                      <p className="font-medium text-gray-800">{doc.name}</p>
-                      
-                      {/* Status specific content */}
-                      {doc.status === 'uploading' && (
-                          <div className="w-full mt-1">
-                              <p className={`text-xs font-medium ${styles.textColor}`}>
-                                  {`Analyzing... ${Math.round(doc.progress ?? 0)}%`}
-                              </p>
-                              <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                                <div
-                                    className={`${styles.progressBg} h-2 rounded-full transition-all duration-300 ease-linear`}
-                                    style={{ width: `${doc.progress ?? 0}%` }}
-                                ></div>
-                              </div>
-                          </div>
-                      )}
-
-                      {doc.status === 'uploaded' && (
-                          <>
-                              <div className="flex items-center text-xs text-green-700 mt-1.5">
-                                  <CheckCircleIcon className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
-                                  <span className="font-semibold">Verified Details:</span>
-                              </div>
-                              {doc.extractedData && Object.keys(doc.extractedData).length > 0 ? (
-                                  <div className="text-xs mt-1 space-y-0.5 pl-5">
-                                      {Object.entries(doc.extractedData).map(([key, value]) => (
-                                          <p key={key} className="text-gray-700 truncate">
-                                              <span className="font-medium">{key}:</span> {value}
-                                          </p>
-                                      ))}
-                                  </div>
-                              ) : (
-                                  <p className="text-xs text-gray-500 mt-1 truncate max-w-[150px]">{doc.file?.name}</p>
-                              )}
-                          </>
-                      )}
-                      
-                      {doc.status === 'error' && (
-                          <p className={`text-xs mt-1 ${styles.textColor}`}>{doc.error}</p>
-                      )}
-                    </div>
-                    <div className="flex-shrink-0 w-20 text-right">
-                        {(doc.status === 'pending' || doc.status === 'error') && (
-                            <button onClick={() => handleFileSelect(doc.id)} className={`inline-flex items-center space-x-2 ${styles.actionColor} font-semibold text-sm`}>
-                                <UploadIcon className="w-5 h-5" />
-                                <span>{doc.status === 'error' ? 'Retry' : 'Upload'}</span>
-                            </button>
-                        )}
-                        {doc.status === 'uploading' && (
-                            <div className="flex justify-center items-center h-full">
-                                <svg className={`animate-spin h-5 w-5 ${styles.textColor}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                            </div>
-                        )}
-                        {doc.status === 'uploaded' && <div className="flex justify-end"><CheckCircleIcon className={`w-6 h-6 ${styles.iconColor}`} /></div>}
-                    </div>
-                </div>
-            )
-        })}
+      <h2 className="text-2xl font-bold text-gray-800">Smart Apply</h2>
+      <p className="text-gray-600 mt-2 mb-6">Let our AI assist you. Upload your documents, and we'll pre-fill your application.</p>
+      
+      <div 
+          className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-colors duration-300 ${isDragOver ? 'border-capital-red bg-red-50' : 'border-gray-300 bg-gray-50'}`}
+          onDragOver={e => onDrag(e, true)}
+          onDragEnter={e => onDrag(e, true)}
+          onDragLeave={e => onDrag(e, false)}
+          onDrop={onDrop}
+      >
+        <UploadIcon className="w-12 h-12 mx-auto text-gray-400" />
+        <h4 className="mt-4 text-lg font-semibold text-gray-700">Drag & Drop Your Documents</h4>
+        <p className="text-gray-500 mt-1">or</p>
+        <Button variant="secondary" onClick={() => fileInputRef.current?.click()} className="mt-2" disabled={isProcessing}>
+          { isProcessing ? 'Processing...' : 'Browse Files' }
+        </Button>
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={e => handleFileChange(e.target.files)}
+          className="hidden"
+          multiple
+          accept="image/png, image/jpeg, application/pdf"
+        />
+        <p className="text-xs text-gray-400 mt-4">Supports: PAN, Aadhaar, Admission Letter, Marksheets (PDF, PNG, JPG)</p>
       </div>
 
-      <div className="mt-8">
-        <h3 className="font-semibold text-gray-700">Digital Signature & eMandate</h3>
-        <p className="text-sm text-gray-500 mt-1 mb-4">Once all documents are approved, you can complete the e-signature.</p>
-        <div className="bg-gray-50 p-4 rounded-lg text-center">
-            <p className="text-gray-600">{allDocsUploaded ? "Ready for e-signature!" : "Pending document uploads"}</p>
+      {files.length > 0 && (
+          <div className="space-y-3 mt-6">
+              {files.map(file => (
+                  <div key={file.id} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex items-center justify-between">
+                      <div className="flex-grow pr-4 overflow-hidden">
+                          <p className="font-medium text-gray-800 truncate">{file.file.name}</p>
+                          <p className="text-xs text-gray-500">{file.type || '...'}</p>
+                          {file.status === 'error' && <p className="text-xs text-red-500 truncate">{file.error}</p>}
+                          {file.status === 'success' && file.extractedData && (
+                              <div className="text-xs text-gray-600 truncate">
+                                  {Object.entries(file.extractedData).map(([k,v]) => `${k}: ${v}`).join(', ')}
+                              </div>
+                          )}
+                      </div>
+                      <div className="flex-shrink-0 w-28 text-right">{getStatusIndicator(file)}</div>
+                  </div>
+              ))}
+          </div>
+      )}
+      
+      {allDone && Object.keys(aggregatedProfile).length > 0 && (
+        <div className="mt-8 p-6 bg-green-50 rounded-lg border border-green-200">
+          <h3 className="font-bold text-lg text-green-800 flex items-center"><CheckCircleIcon className="w-6 h-6 mr-2" /> AI Analysis Complete!</h3>
+          <p className="text-green-700 mt-2">We've extracted the following information. Your profile has been updated.</p>
+          <ul className="mt-4 space-y-2 text-sm">
+              {Object.entries(aggregatedProfile).map(([key, value]) => (
+                  <li key={key} className="flex">
+                      <span className="font-semibold text-gray-700 w-24 capitalize">{key}:</span>
+                      <span className="text-gray-800">{String(value)}</span>
+                  </li>
+              ))}
+          </ul>
         </div>
-      </div>
+      )}
 
       <div className="mt-8 flex items-center space-x-4">
         {goBack && <Button variant="secondary" onClick={goBack}>Back</Button>}
-        <Button fullWidth disabled={!allDocsUploaded} onClick={() => setJourneyStep(JourneyStep.SanctionApproval)}>
+        <Button fullWidth disabled={!allDone} onClick={() => setJourneyStep(JourneyStep.SanctionApproval)}>
           Submit Application
         </Button>
       </div>

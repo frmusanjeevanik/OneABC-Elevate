@@ -59,6 +59,7 @@ export interface Document {
   error?: string;
   progress?: number;
   extractedData?: Record<string, string>;
+  previewUrl?: string;
 }
 
 export interface AppState {
@@ -67,6 +68,7 @@ export interface AppState {
   eligibleAmount: number | null;
   selectedOffer: LoanOffer | null;
   documents: Document[];
+  chatHistory: ChatMessage[];
 }
 
 export interface AppContextType {
@@ -76,5 +78,6 @@ export interface AppContextType {
   setEligibleAmount: (amount: number | null) => void;
   setSelectedOffer: (offer: LoanOffer | null) => void;
   updateDocument: (id: string, updates: Partial<Document>) => void;
+  setChatHistory: (history: ChatMessage[]) => void;
   reset: () => void;
 }

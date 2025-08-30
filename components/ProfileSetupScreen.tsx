@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { JourneyStep, type ScreenProps, type UserProfile } from '../types';
 import Button from './common/Button';
@@ -155,6 +153,9 @@ const ProfileSetupScreen: React.FC<ScreenProps> = ({ setJourneyStep, goBack }) =
             <>
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">Personal Details</h2>
                 <p className="text-gray-600 mb-6">Let's start with the basics. We'll try to auto-fill where we can!</p>
+                 <div className="bg-yellow-50 border-l-4 border-warm-yellow p-3 rounded-r-lg mb-6 text-sm text-yellow-900">
+                    <p><b>Pro Tip:</b> You can skip manual entry! Upload your documents on the next screen and our AI will fill this in for you.</p>
+                </div>
                 <div className="space-y-4">
                     <div>
                         <label htmlFor="name" className="block text-sm font-medium text-gray-700">Full Name (as per PAN)</label>
